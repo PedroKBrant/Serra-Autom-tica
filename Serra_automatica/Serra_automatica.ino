@@ -92,8 +92,106 @@ ESP32 - - - - - - OPS010
 #define A4_PUXADOR             05
 #define A5_BOTAO_CANCELA       18
 
+/*
+int cortes[10];
+int cortes_size = 10;
 
-int S0(){ // ESTADO INICIAL
+void GET_CORTES(int * cortes, int cortes_size){ //TODO AJUSTAR PARA VARIOS CORTES 
+  Serial.println("Insira o tamanho do perfil:");   // Prompt User for input
+  while (Serial.available()==0){}                  // wait for user input
+  cortes[0] = Serial.parseInt();                   // Read user input and hold it in a variable
+  cortes[0] = 10;
+  Serial.println(cortes[0]);
+  cortes[1] = cortes[0];
+  Serial.println("Insira o tamanho do corte 1:");   
+  while (Serial.available()==0){}                 
+  cortes[2] = Serial.parseInt();                  
+
+  Serial.println("Insira o número de cortes do tipo 1:");
+  while (Serial.available()==0){}                 
+  cortes[3] = Serial.parseInt();
+
+  if(CALCULATE_CORTES(cortes, cortes_size)){
+    Serial.print("tamanho do perfil:");                 
+    Serial.print(cortes[0]);
+    Serial.print("Sobras:");                 
+    Serial.print(cortes[1]);
+  }
+  else{
+    Serial.print("Não é possível realizar plano de corte");
+  }
+}
+
+bool CALCULATE_CORTES(int * cortes, int cortes_size){
+  int perda = 5;
+  cortes[1] = cortes[0] - (cortes[2]*cortes[3] + perda*cortes[3]);
+  if(cortes[1] >= 0){
+    return true;
+  }
+  return false;
+}
+*/
+float tamanho_madeira = 300;
+float largura_mesa = 350;
+float perda_corte = 0.3;
+//float tamanho_corte[5];
+//float numero_cortes[5];
+float tamanho_corte[] = {30,20,0,0,0};
+float numero_cortes[] = {5,5,0,0,0};
+float sobra = 0;
+float posicao_carrinho = 350;
+
+void calcula_posicao_carrinho(float deslocamento){
+  posicao_carrinho = posicao_carrinho - deslocamento;
+  Serial.println(deslocamento);
+  Serial.println(posicao_carrinho);
+}
+float calcula_sobra(){
+  float total_corte = 0;
+  for(int i=0;i<5;i++){
+    total_corte = total_corte+(tamanho_corte[i]*numero_cortes[i])+(numero_cortes[i]*perda_corte);
+  }
+  sobra = tamanho_madeira - total_corte;
+  return sobra;
+}
+int calcula_tipos_cortes(){
+  int tipos = 0;
+  for(int i=0;i<5;i++){
+    Serial.println(tamanho_corte[i]);
+    if(tamanho_corte[i] != 0 && numero_cortes[i] != 0){
+      tipos++;
+    }
+  }
+  return tipos;
+}
+void zera_cortes(){
+  for(int i=0;i<5;i++){
+    tamanho_corte[i] = 0;
+    numero_cortes[i] = 0;
+  }
+}
+
+void motor_passo(int distancia){
+  digitalWrite(M1_AVANCO, HIGH);
+  digitalWrite(LED_BUILTIN, HIGH);
+  for(int i=0;i<distancia;i++){
+    digitalWrite(M1_PASSO, HIGH);   
+    delay(1);
+    digitalWrite(M1_PASSO, LOW);
+    delay(1);
+  }
+  digitalWrite(M1_AVANCO, LOW);
+  digitalWrite(LED_BUILTIN, LOW);
+  for(int i=0;i<distancia;i++){
+    digitalWrite(M1_PASSO, HIGH);   
+    delay(1);
+    digitalWrite(M1_PASSO, LOW);
+    delay(1);
+  }
+}
+
+int ESTADO_INICIAL(){ 
+  bool recebe_cortes = true;
   digitalWrite(M1_AVANCO, LOW);
   digitalWrite(M1_RETORNO, LOW);
   digitalWrite(M1_PASSO, LOW);
@@ -102,10 +200,28 @@ int S0(){ // ESTADO INICIAL
   digitalWrite(P2_CARRINHO_SERRA, LOW);
   digitalWrite(P3_PRENSOR_SAIDA, LOW);
   digitalWrite(P4_PUXADOR, LOW);  
-  GET_CORTES( cortes, cortes_size);   
+  //GET_CORTES(cortes, cortes_size);
+  while(recebe_cortes == false){}   
   return NULL;
 }
-int S1(){ // EMPURRA MADEIRA
+
+int EMPURRA_MADEIRA(float distancia){ 
+  digitalWrite(M1_AVANCO, LOW);
+  digitalWrite(M1_RETORNO, LOW);
+  digitalWrite(M1_PASSO, LOW);
+  digitalWrite(M2_SERRA, LOW);
+  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
+  digitalWrite(P2_CARRINHO_SERRA, LOW);
+  digitalWrite(P3_PRENSOR_SAIDA, LOW);
+  digitalWrite(P4_PUXADOR, LOW);
+  
+  //motor_passo(distancia);
+  calcula_posicao_carrinho(distancia);
+  
+  return NULL;
+}
+
+int CORTE_AVANCO(){ 
   digitalWrite(M1_AVANCO, LOW);
   digitalWrite(M1_RETORNO, LOW);
   digitalWrite(M1_PASSO, LOW);
@@ -116,7 +232,8 @@ int S1(){ // EMPURRA MADEIRA
   digitalWrite(P4_PUXADOR, LOW);     
   return NULL;
 }
-int S2(){ // CORTE AVANÇO
+
+int CORTE_RETORNO(){ 
   digitalWrite(M1_AVANCO, LOW);
   digitalWrite(M1_RETORNO, LOW);
   digitalWrite(M1_PASSO, LOW);
@@ -127,18 +244,8 @@ int S2(){ // CORTE AVANÇO
   digitalWrite(P4_PUXADOR, LOW);     
   return NULL;
 }
-int S3(){ // CORTE RETORNO
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);     
-  return NULL;
-}
-int S4(){ // RETORNO
+
+int RETORNO(){ 
   digitalWrite(M1_AVANCO, LOW);
   digitalWrite(M1_RETORNO, LOW);
   digitalWrite(M1_PASSO, LOW);
@@ -169,11 +276,37 @@ void setup() {
   pinMode(A5_BOTAO_CANCELA,       INPUT);
 
   Serial.begin(115200);
- 
+  Serial.println("Initialized");
 }
 
 // the loop function runs over and over again forever
 void loop() {
+  int tipos_cortes = calcula_tipos_cortes();
+  Serial.println("NUM CORTES ");
+    Serial.println(tipos_cortes);
+  zera_cortes();
+  
+  ESTADO_INICIAL();
+  Serial.println("ESTADO_INICIAL");
+  EMPURRA_MADEIRA(largura_mesa-tamanho_madeira);
+  Serial.println("EMPURRA_MADEIRA");
+  for(int tipo=0; tipo<tipos_cortes;tipo++){
+    Serial.println(tamanho_corte[tipo]);
+    for(int numero;numero<numero_cortes[tipo];numero++){
+      Serial.println("EMPURRA_MADEIRA");
+      Serial.println(tamanho_corte[tipo]);
+      EMPURRA_MADEIRA(tamanho_corte[tipo]);
+      if(true){
+        CORTE_AVANCO();
+        if(true){
+          CORTE_RETORNO();
+        }
+      }
+      delay(500);
+    }
+    
+    RETORNO();
+  }
   digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
   delay(1000);                       // wait for a second
   digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
