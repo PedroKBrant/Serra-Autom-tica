@@ -114,23 +114,41 @@ ESP32 - - - - - - OPS010
 
 enum Estados_enum {S0, S1, S2, S3, S4};
 Estados_enum estado = S0;
-void maquina_estados(uint8_t estado);
+
+void maquina_estados();
 
 void ESTADO_INICIAL();
-void EMPURRA_MADEIRA(float distancia);
-void CORTE_AVANCO();
-void CORTE_RETORNO();
-void RETORNO();
-
 void cria_plano_corte();
 void print_plano_corte();
+void calcula_perda();
+
+void EMPURRA_MADEIRA(float distancia);
+void calcula_sobra();
+
+void CORTE_AVANCO();
+
+void CORTE_RETORNO();
+
+void RETORNO();
+
+
 
 float comando[10]={300,5,5,30,5,20,5,10,0,0};
-float plano_de_corte[50]={0};
+float plano_corte[50]={0};
+float tamanho_madeira = 0;
+float espessura_serra = 0;
+int indice_plano_corte = 0;
+float sobra = 0;
+float perda = 0;
 
 
 
 void setup() {
+  Serial.begin(115200); // (USB)
+  Serial1.begin(115200); // (TTL)
+  Serial2.begin(115200); //(485)
+  Serial.println("Initialized");
+  
   pinMode(LED_BUILTIN,           OUTPUT);
   pinMode(M1_AVANCO,             OUTPUT);
   pinMode(M1_RETORNO,            OUTPUT);
@@ -155,54 +173,72 @@ void setup() {
   digitalWrite(P2_CARRINHO_SERRA, LOW);
   digitalWrite(P3_PRENSOR_SAIDA, LOW);
   digitalWrite(P4_PUXADOR, LOW);  
-
-  Serial.begin(115200);
-  Serial.println("Initialized");
 }
+
+bool recebe_comando = true;// TESTE
 
 void loop() {
- 
-
+  maquina_estados();
+  delay(10);
 }
 
-void maquina_estados(uint8_t estado){
+void maquina_estados(){
   switch(estado){
     case S0:
       ESTADO_INICIAL();
+      if (recebe_comando){
+        cria_plano_corte();
+        print_plano_corte();
+        calcula_perda();
+        estado = S1;
+      }
       break;
 
      case S1:
-      EMPURRA_MADEIRA(30);
+      calcula_sobra(plano_corte[indice_plano_corte]);
+      Serial.print("Corte:  ");
+      Serial.println(indice_plano_corte);
+      if((sobra > plano_corte[indice_plano_corte]) && (plano_corte[indice_plano_corte] != 0)){
+        EMPURRA_MADEIRA(plano_corte[indice_plano_corte]);
+        estado = S2;
+      }
+      else{
+        Serial.println("Não é possível realizar mais cortes");
+        estado = S0;
+      }
       break;
 
      case S2:
-      CORTE_AVANCO();
+      if(A2_AVANCO_SERRA || true){// TRUE SO PARA TESTE
+        CORTE_AVANCO();
+        estado = S3;
+      }
       break;
 
      case S3:
-     CORTE_RETORNO();
+     if(A3_RETORNO_SERRA || true){// TRUE SO PARA TESTE
+      CORTE_RETORNO();
+      indice_plano_corte++;
+      if(plano_corte[indice_plano_corte] != 0){
+        estado = S1;
+      }
+      else{
+       estado = S4;
+      }
+
+     }
       break;
       
      case S4:
       RETORNO();
+      estado = S0;
       break;
   }
-  
 }
 
 void ESTADO_INICIAL(){ 
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);  
-
-}
-
-void EMPURRA_MADEIRA(float distancia){ 
+  Serial.println("ESTADO_INICIAL");
+        
   digitalWrite(M1_AVANCO, LOW);
   digitalWrite(M1_RETORNO, LOW);
   digitalWrite(M1_PASSO, LOW);
@@ -213,29 +249,51 @@ void EMPURRA_MADEIRA(float distancia){
   digitalWrite(P4_PUXADOR, LOW);
 }
 
+void EMPURRA_MADEIRA(float distancia){// TODO adicionar e calibrar avanço do motor de passo em cm
+  Serial.print("EMPURRA_MADEIRA ");
+  Serial.println(distancia);
+      
+  digitalWrite(M1_AVANCO, LOW);
+  digitalWrite(M1_RETORNO, LOW);
+  digitalWrite(M1_PASSO, LOW);
+  digitalWrite(M2_SERRA, LOW);
+  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
+  digitalWrite(P2_CARRINHO_SERRA, LOW);
+  digitalWrite(P3_PRENSOR_SAIDA, LOW);
+  digitalWrite(P4_PUXADOR, LOW);
+  Serial.print("AVANÇO ");
+  Serial.println(distancia);
+}
+
 void CORTE_AVANCO(){ 
+  Serial.println("CORTE_AVANCO ");
+        
+  digitalWrite(M1_AVANCO, LOW);
+  digitalWrite(M1_RETORNO, LOW);
+  digitalWrite(M1_PASSO, LOW);
+  digitalWrite(M2_SERRA, HIGH);
+  digitalWrite(P1_PRENSOR_ENTRADA, HIGH);
+  digitalWrite(P2_CARRINHO_SERRA, HIGH);
+  digitalWrite(P3_PRENSOR_SAIDA, HIGH);
+  digitalWrite(P4_PUXADOR, LOW);     
+}
+
+void CORTE_RETORNO(){// TODO serra ligada na volta?
+  Serial.println("CORTE_RETORNO ");
+        
   digitalWrite(M1_AVANCO, LOW);
   digitalWrite(M1_RETORNO, LOW);
   digitalWrite(M1_PASSO, LOW);
   digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
+  digitalWrite(P1_PRENSOR_ENTRADA, HIGH);
   digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);     
+  digitalWrite(P3_PRENSOR_SAIDA, HIGH);
+  digitalWrite(P4_PUXADOR, HIGH);     
 }
 
-void CORTE_RETORNO(){ 
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);     
-}
-
-void RETORNO(){ 
+void RETORNO(){// TODO adicionar motor de passo
+  Serial.println("RETORNO ");
+        
   digitalWrite(M1_AVANCO, LOW);
   digitalWrite(M1_RETORNO, LOW);
   digitalWrite(M1_PASSO, LOW);
@@ -247,26 +305,39 @@ void RETORNO(){
 }
 
 void cria_plano_corte(){
-  float tamanho_madeira = comando[0];
-  float espessura_serra = comando[1];
+  tamanho_madeira = comando[0];
+  espessura_serra = comando[1];
   int index_plano_corte = 1;
-  plano_de_corte[0] =  TAMANHO_MESA-tamanho_madeira;
+  sobra = tamanho_madeira;
+  plano_corte[0] =  TAMANHO_MESA-tamanho_madeira;
   for(int tipo_corte=2 ; tipo_corte<=9; tipo_corte=tipo_corte+2){
     for(int num_corte=0; num_corte<comando[tipo_corte]; num_corte++,index_plano_corte++){
-      plano_de_corte[index_plano_corte] = comando[tipo_corte+1];
+      plano_corte[index_plano_corte] = comando[tipo_corte+1];
       }
-   } 
+   }
+  indice_plano_corte = 0; 
 }
 
 void print_plano_corte(){
-  for(int i=0;plano_de_corte[i] !=0;i++){
-    if(i>0 && plano_de_corte[i-1] == plano_de_corte[i]){
+  for(int i=0;plano_corte[i] !=0;i++){
+    if(i>0 && plano_corte[i-1] == plano_corte[i]){
       Serial.print(" - ");
-      Serial.print(plano_de_corte[i]);
+      Serial.print(plano_corte[i]);
       
     }else{
       Serial.println("");
-      Serial.print(plano_de_corte[i]);
+      Serial.print(plano_corte[i]);
     }
   }
 }
+
+void calcula_perda(){// TODO CALCULAR A PERDA
+  perda = espessura_serra;
+}
+
+void calcula_sobra(float distancia){
+  sobra = sobra - distancia - perda;
+}
+
+
+
