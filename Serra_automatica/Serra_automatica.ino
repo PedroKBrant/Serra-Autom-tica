@@ -99,6 +99,7 @@
  */
 
 #include <AccelStepper.h>
+#include "DWIN_COMM.h"
 
 #define M1_STEP                13
 #define M1_DIRECTION           12
@@ -121,12 +122,14 @@
 #define VELOCIDADE_MAX_CARRINHO 12000 // steps/s /800 3cm/s
 #define ACELERACAO_MAX_CARRINHO 1000 // steps/s/s
 
+DWIN Comm3(115200, &Serial2, true, 2); // 485
+
 AccelStepper stepper(AccelStepper::DRIVER, M1_STEP, M1_DIRECTION);
 
 enum Estados_enum {S0, S1, S2, S3, S4};
-Estados_enum estado = S0;
+Estados_enum estado = S4;
 
-float comando[10]={300,5,5,30,5,20,5,10,0,0};
+int16_t comando[17]= {0};
 float plano_corte[50]={0};
 float tamanho_perfil = 0;
 float espessura_serra = 0;
@@ -138,6 +141,9 @@ float perda = 0;
 void maquina_estados();
 
 void ESTADO_INICIAL();
+void zera_comando();
+void read_comando();
+void print_comando();
 void cria_plano_corte();
 void print_plano_corte();
 void calcula_perda();
@@ -157,11 +163,11 @@ void zera_posicao_atual();
 
 void setup() {
   Serial.begin(115200); // (USB)
-  Serial1.begin(115200); // (TTL)
   Serial2.begin(115200); //(485)
+  pinMode(2, OUTPUT);
   Serial.println("Initialized");
 
-  stepper.setEnablePin(M1_ENABLE); // WHATEVER
+  stepper.setEnablePin(M1_ENABLE);
   stepper.setPinsInverted(false, false, false); // direction, steps, enable
   stepper.setMaxSpeed(VELOCIDADE_MAX_CARRINHO); // steps per second 2cm/s
   stepper.setAcceleration(ACELERACAO_MAX_CARRINHO);// steps per second per second
@@ -199,7 +205,7 @@ void loop() {
   //calcula_posicao_atual();
   Serial.print("Posição atual:  ");
   Serial.println(posicao_atual);
-    Serial.print("Sobra:  ");
+  Serial.print("Sobra:  ");
   Serial.println(sobra);
   maquina_estados();
   delay(1000);
@@ -207,11 +213,14 @@ void loop() {
 
 void maquina_estados(){
   switch(estado){
-    case S0:
+    case S0://TODO check if it is in origin
       para_carrinho();
       zera_posicao_atual();
       ESTADO_INICIAL();
       if (recebe_comando){
+        zera_comando();
+        read_comando();
+        print_comando();
         cria_plano_corte();
         print_plano_corte();
         calcula_perda();
@@ -333,13 +342,37 @@ void RETORNO(){// TODO adicionar motor de passo
   retorna_carrinho();
 }
 
+void zera_comando(){
+  for(int i=1;i<18;i++){
+    comando[i] = 0;
+  }
+}
+
+void read_comando(){
+  for(int i=1;i<18;i++){
+      Comm3.read(i, &comando[i]);
+  }
+}
+
+void print_comando(){
+  for(int i=1;i<18;i++){
+    Serial.print("posicao ");
+    Serial.print(i);
+    Serial.print(":  ");
+    Serial.println(comando[i]);
+  }
+  Serial.println("");
+  Serial.println("");
+  Serial.println("");
+}
+
 void cria_plano_corte(){
-  tamanho_perfil = comando[0];
-  espessura_serra = comando[1];
+  tamanho_perfil = comando[1];
+  espessura_serra = comando[2];
   int index_plano_corte = 1;
   sobra = tamanho_perfil;
   plano_corte[0] =  TAMANHO_MESA-tamanho_perfil;
-  for(int tipo_corte=2 ; tipo_corte<=9; tipo_corte=tipo_corte+2){
+  for(int tipo_corte=2 ; tipo_corte<=9; tipo_corte=tipo_corte+2){//TODO inverter tipo de corte com tsmanho corte
     for(int num_corte=0; num_corte<comando[tipo_corte]; num_corte++,index_plano_corte++){
       plano_corte[index_plano_corte] = comando[tipo_corte+1];
       }
@@ -352,7 +385,6 @@ void print_plano_corte(){
     if(i>0 && plano_corte[i-1] == plano_corte[i]){
       Serial.print(" - ");
       Serial.print(plano_corte[i]);
-      
     }else{
       Serial.println("");
       Serial.print(plano_corte[i]);
@@ -382,13 +414,14 @@ void calcula_posicao_atual(float deslocamento){
   posicao_atual = posicao_atual - deslocamento;
 }
 
-void moveDistancia(float distancia) {
+void moveDistancia(float distancia) {//TODO solve speed limit
   stepper.move(distancia * STEPS_PER_ROTATION / DISTANCE_PER_ROTATION); //moveTo for absolute position
 }
+
 void retorna_carrinho(){
-  while(!A1_RETORNO_CARRINHO || true){
+  while(!A1_RETORNO_CARRINHO || true){//TESTE
     stepper.setSpeed(-4000);
     stepper.runSpeed();
     }//teste
-
+  Serial.print("Retornei para o início");
 }
