@@ -218,10 +218,11 @@ void loop() {
   print_comando();
   read_buttons();
   if(botao_pause == 1){
-    reset(); 
+    reset(); //TODO concluir 
   }
   if(botao_reset == 1){
     reset();
+    comando[17] = 0;
     botao_reset = 0;  
   }
   maquina_estados();
@@ -237,7 +238,8 @@ void maquina_estados(){
       calcula_sobra();
       ESTADO_INICIAL();
       if (botao_play == 1){
-        botao_play = 0;
+        //botao_play = 0;
+        Comm3.write(15, 0);
         read_comando();
         print_comando();
         cria_plano_corte();
