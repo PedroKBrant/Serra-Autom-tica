@@ -133,25 +133,32 @@ int16_t comando[17]= {0};
 float plano_corte[50]={0};
 float tamanho_perfil = 0;
 float espessura_serra = 0;
+int botao_play = 0;
+int botao_pause = 0;
+int botao_reset = 0;
 float posicao_atual = 0;
 int indice_plano_corte = 0;
 float sobra = 0;
 float perda = 0;
 
+uint16_t IHM_STA_Pagina = 0;
 void maquina_estados();
 
 void ESTADO_INICIAL();
 void zera_comando();
+void read_buttons();
+void reset();
 void read_comando();
 void print_comando();
 void cria_plano_corte();
 void print_plano_corte();
 void calcula_perda();
+void calcula_sobra();
 
 void EMPURRA_MADEIRA(float distancia);
 void calcula_posicao_atual(float deslocamento);
 void moveDistancia();
-void calcula_sobra();
+void calcula_resto();
 
 void CORTE_AVANCO();
 
@@ -160,6 +167,7 @@ void CORTE_RETORNO();
 void RETORNO();
 void retorna_carrinho();
 void zera_posicao_atual();
+void para_carrinho();
 
 void setup() {
   Serial.begin(115200); // (USB)
@@ -207,18 +215,29 @@ void loop() {
   Serial.println(posicao_atual);
   Serial.print("Sobra:  ");
   Serial.println(sobra);
+  print_comando();
+  read_buttons();
+  if(botao_pause == 1){
+    reset(); 
+  }
+  if(botao_reset == 1){
+    reset();
+    botao_reset = 0;  
+  }
   maquina_estados();
   delay(1000);
 }
 
 void maquina_estados(){
   switch(estado){
-    case S0://TODO check if it is in origin
+    case S0://   check if it is in origin
       para_carrinho();
       zera_posicao_atual();
+      read_comando();
+      calcula_sobra();
       ESTADO_INICIAL();
-      if (recebe_comando){
-        zera_comando();
+      if (botao_play == 1){
+        botao_play = 0;
         read_comando();
         print_comando();
         cria_plano_corte();
@@ -230,7 +249,7 @@ void maquina_estados(){
 
      case S1:
       para_carrinho();
-      calcula_sobra(plano_corte[indice_plano_corte]);
+      calcula_resto(plano_corte[indice_plano_corte]);
       Serial.print("Corte:  ");
       Serial.println(indice_plano_corte);
       if((sobra > plano_corte[indice_plano_corte]) && (posicao_atual - plano_corte[indice_plano_corte] > 0)){
@@ -348,6 +367,25 @@ void zera_comando(){
   }
 }
 
+void reset(){
+  for(int i=1;i<18;i++){
+      Comm3.write(i, 0);
+  }
+}
+
+void calcula_sobra(){
+  float sobra = comando[1];
+  for(int i=3;i<7;i++){
+    sobra = sobra - (comando[i]*comando[i+4]);
+    Comm3.write(i+8, sobra);
+  }
+}
+
+void read_buttons(){
+  botao_play =  comando[15];
+  botao_pause = comando[16];
+  botao_reset = comando[17];
+}
 void read_comando(){
   for(int i=1;i<18;i++){
       Comm3.read(i, &comando[i]);
@@ -372,9 +410,9 @@ void cria_plano_corte(){
   int index_plano_corte = 1;
   sobra = tamanho_perfil;
   plano_corte[0] =  TAMANHO_MESA-tamanho_perfil;
-  for(int tipo_corte=2 ; tipo_corte<=9; tipo_corte=tipo_corte+2){//TODO inverter tipo de corte com tsmanho corte
-    for(int num_corte=0; num_corte<comando[tipo_corte]; num_corte++,index_plano_corte++){
-      plano_corte[index_plano_corte] = comando[tipo_corte+1];
+  for(int tipo_corte=7 ; tipo_corte<=10; tipo_corte++){//TODO inverter tipo de corte com tamanho corte
+    for(int num_corte=0; num_corte<comando[tipo_corte-4]; num_corte++,index_plano_corte++){
+      plano_corte[index_plano_corte] = comando[tipo_corte];
       }
    }
   indice_plano_corte = 0; 
@@ -396,7 +434,7 @@ void calcula_perda(){// TODO CALCULAR A PERDA
   perda = espessura_serra;
 }
 
-void calcula_sobra(float distancia){
+void calcula_resto(float distancia){
   sobra = sobra - distancia;// - perda;
 }
 
@@ -419,7 +457,7 @@ void moveDistancia(float distancia) {//TODO solve speed limit
 }
 
 void retorna_carrinho(){
-  while(!A1_RETORNO_CARRINHO || true){//TESTE
+  while(!A1_RETORNO_CARRINHO || false){//TESTE
     stepper.setSpeed(-4000);
     stepper.runSpeed();
     }//teste
