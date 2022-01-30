@@ -31,7 +31,7 @@ DWIN Comm3(115200, &Serial2, true, 2); // 485
 AccelStepper stepper(AccelStepper::DRIVER, M1_STEP, M1_DIRECTION);
 
 enum Estados_enum {S0, S1, S2, S3, HALT};
-Estados_enum estado = S3;
+Estados_enum estado = S0;
 
 uint16_t IHM_STA_Pagina = 0;
 
@@ -133,6 +133,7 @@ void maquina_estados(){
       play_button = AUTOMATICO_check_buttons();
       if(play_button){
         AUTOMATICO_print_comando();
+        Serial.print("PLAY");
         Comm3.write(15, 0);
         estado = S1;
       }
@@ -153,10 +154,13 @@ void maquina_estados(){
       break;
 
      case S2:
-      if(digitalRead(A2_AVANCO_SERRA)|| true){// TRUE SO PARA TESTE
+      if(!digitalRead(A2_AVANCO_SERRA)){
         AUTOMATICO_corte();
         indice_plano_corte++;
         if(plano_corte[indice_plano_corte] != 0){
+          CORTE_RETORNO();
+          delay(5000);
+          ESTADO_INICIAL();
           estado = S1;//  NOVO CORTE
         }
         else{
@@ -168,6 +172,10 @@ void maquina_estados(){
      case S3:
       RETORNO();
       AUTOMATICO_retorna_carrinho();
+      Comm3.read(17, &comando[17]);
+      while(!comando[17]){// Espera o Reset
+        Comm3.read(17, &comando[17]);
+      }
       estado = S0;
       break;
      
@@ -249,14 +257,10 @@ void AUTOMATICO_zera_comando(){
 
 void AUTOMATICO_corte(){
   if(!digitalRead(A2_AVANCO_SERRA)){
-      while(digitalRead(A3_RETORNO_SERRA)){
-        CORTE_AVANCO();
-      }
-      CORTE_RETORNO();
-      delay(5000);
-      ESTADO_INICIAL();
-      Comm3.write(22, 0);
+    while(digitalRead(A3_RETORNO_SERRA)){
+      CORTE_AVANCO();
     }
+  }
 }
 
 void AUTOMATICO_moveDistance(float distance, float serra, bool frente) {
@@ -327,7 +331,15 @@ void MANUAL_empurra_avanco(){
 
 void MANUAL_corte(){
   if(comando_manual[4] == 1){ 
-    AUTOMATICO_corte();
+      if(!digitalRead(A2_AVANCO_SERRA)){
+        while(digitalRead(A3_RETORNO_SERRA)){
+          CORTE_AVANCO();
+        }
+        CORTE_RETORNO();
+        delay(5000);
+        ESTADO_INICIAL();
+        Comm3.write(22, 0);
+     }
   }
 }
 
@@ -405,7 +417,7 @@ float UTILS_calculate_distance(float distance, float serra){// TODO Conferir com
 }
 
 void UTILS_calculate_sobra(){// TODO adicionar o calculo de distãncia~?
-  float sobra = comando[1]-2;
+  float sobra = comando[1];
   for(int i=3;i<7;i++){
     sobra = sobra - (comando[i] * UTILS_calculate_distance(comando[i+4], comando[2]));
     Comm3.write(i+8, sobra);
@@ -437,7 +449,9 @@ void EMPURRA_MADEIRA(float distancia){// TODO adicionar e calibrar avanço do mo
   digitalWrite(P2_CARRINHO_SERRA, LOW);
   digitalWrite(P3_PRENSOR_SAIDA, LOW);
   digitalWrite(P4_PUXADOR, LOW);
-  AUTOMATICO_moveDistance(distancia, comando[2], true);
+  if(distancia != 0){
+      AUTOMATICO_moveDistance(distancia, comando[2], true);
+  }
 }
 
 void CORTE_AVANCO(){ 
@@ -470,9 +484,9 @@ void RETORNO(){// TODO adicionar motor de passo
   digitalWrite(M1_STEP, LOW);
   digitalWrite(M2_SERRA, LOW);
   digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
+  digitalWrite(P2_CARRINHO_SERRA, HIGH);
   digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW); 
+  digitalWrite(P4_PUXADOR, HIGH);  
 }
 
 void HALT_STOP(){// TODO adicionar motor de passo
