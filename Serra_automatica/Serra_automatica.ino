@@ -1,314 +1,517 @@
-/*
-          SERRA AUTOMATICA
-            by Pedro Brant
-             30/10/2021
-             ____
-            |  A2|
- ___________|    |_________
-|           |    |       A1|
-|  P4  P3   | M2 | P1      |M1
-|____A4_____|    |_________|
-            |    |
-            |__A3|
-              P2
-                                     
-==> SAÍDAS - (8 SAÍDAS)
-    - M1 - MOTOR DE PASSO      -> 3 SAÍDAS DIGITAIS
-    - M2 - MOTORES SERRA       -> 1 SAÍDA DIGITAL
-    - P1 - PRENSOR ENTRADA     -> 1 SAÍDA DIGITAL
-    - P2 - CARRINHO SERRA      -> 1 SAÍDA DIGITAL
-    - P3 - PRENSOR SAÍDA       -> 1 SAÍDA DIGITAL
-    - P4 - PUXADOR             -> 1 SAÍDA DIGITAL
+#include <AccelStepper.h>
+#include "DWIN_COMM.h"
 
-==> ENTRADAS - (4 ENTRADAS)
-    - A1 - RETORNO ALIMENTAÇÃO -> 1 ENTRADA DIGITAL
-    - A2 - AVANÇO SERRA        -> 1 ENTRADA DIGITAL
-    - A3 - RETORNO SERRA       -> 1 ENTRADA DIGITAL
-    - A4 - PUXADOR             -> 1 ENTRADA DIGITAL
-    - A5 - BOTÃO CANCELA       -> 1 ENTRADA DIGITAL
-
-==> ESTADOS
-    - S0 - ESTADO INICIAL  
-    - S1 - EMPURRA MADEIRA 
-    - S2 - CORTE AVANÇO
-    - S3 - CORTE RETORNO
-    - S4 - RETORNO
-    
-==> FUNÇÕES
-
-- = - = - = - = - = - = - OPS010  - = - = - = - = - = - = -
-
-==> PORTAS
-    - 08 ENTRADAS DIGITAIS 24VDC OPTOACOPLADAS
-    - 08 SAÍDAS DIGITAIS 24VDC TRANSISTORIZADAS
-    - 01 ENTRADA ANALÓGICA 0-10V
-    - 01 SAÍDA ANALÓGICA 0-10V
-    
-==> MAPEAMENTO PINOS  
-ESP32 - - - - - - OPS010 
-     SAÍDA DIGITAL
- 13                 Y1
- 12 - - - - - - - - Y2
- 27                 Y3
- 26 - - - - - - - - Y4
- 25                 Y5
- 33 - - - - - - - - Y6
- 32                 Y7
- 04 - - - - - - - - Y8
- 
-    ENTRADA DIGITAL 
- 15                 X1
- 34 - - - - - - - - X2
- 35                 X3
- 05 - - - - - - - - X4
- 18                 X5
- 19 - - - - - - - - X6
- 14                 X7
- 39 - - - - - - - - X8
- 36                A|1
- 23 - - - - - - - -A|2
- 
- 02           ENTX_pin
- 22 - - - - - - TTL RX
- 21             TTL TX
- S1 - - - - - - -  USB 
- S2              RS485
- S3 - - - - - - - -TTL
-                
-*/
-
-#define M1_AVANCO              13
-#define M1_RETORNO             12
-#define M1_PASSO               27
+#define M1_STEP                13
+#define M1_DIRECTION           12
+#define M1_ENABLE              27
 #define M2_SERRA               26
 #define P1_PRENSOR_ENTRADA     25 
 #define P2_CARRINHO_SERRA      33
 #define P3_PRENSOR_SAIDA       32
 #define P4_PUXADOR             04
 
-#define A1_RETORNO_ALIMENTACAO 15
-#define A2_AVANCO_SERRA        34
-#define A3_RETORNO_SERRA       35
-#define A4_PUXADOR             05
-#define A5_BOTAO_CANCELA       18
+#define A1_RETORNO_CARRINHO    15
+#define A2_AVANCO_SERRA        14
+#define A3_RETORNO_SERRA       05
+#define A4_PUXADOR             18
+#define A5_BOTAO_CANCELA       19
+#define A6_RESERVA             36
+#define A7_RESERVA             39
+#define A8_RESERVA             34
 
-/*
-int cortes[10];
-int cortes_size = 10;
+#define TAMANHO_MESA           300
+#define STEPS_PER_ROTATION     800.0
+#define DISTANCE_PER_ROTATION   1.0 // TESTAR DISTANCIA EM CM POR ROTACAO
+#define VELOCIDADE_MAX_CARRINHO 4000 // steps/s  10cm/s
+#define ACELERACAO_MAX_CARRINHO 2000 // steps/s/s
+#define TEMPO_DEBOUNCE 10 //ms
 
-void GET_CORTES(int * cortes, int cortes_size){ //TODO AJUSTAR PARA VARIOS CORTES 
-  Serial.println("Insira o tamanho do perfil:");   // Prompt User for input
-  while (Serial.available()==0){}                  // wait for user input
-  cortes[0] = Serial.parseInt();                   // Read user input and hold it in a variable
-  cortes[0] = 10;
-  Serial.println(cortes[0]);
-  cortes[1] = cortes[0];
-  Serial.println("Insira o tamanho do corte 1:");   
-  while (Serial.available()==0){}                 
-  cortes[2] = Serial.parseInt();                  
+DWIN Comm3(115200, &Serial2, true, 2); // 485
 
-  Serial.println("Insira o número de cortes do tipo 1:");
-  while (Serial.available()==0){}                 
-  cortes[3] = Serial.parseInt();
+AccelStepper stepper(AccelStepper::DRIVER, M1_STEP, M1_DIRECTION);
 
-  if(CALCULATE_CORTES(cortes, cortes_size)){
-    Serial.print("tamanho do perfil:");                 
-    Serial.print(cortes[0]);
-    Serial.print("Sobras:");                 
-    Serial.print(cortes[1]);
-  }
-  else{
-    Serial.print("Não é possível realizar plano de corte");
-  }
-}
+enum Estados_enum {S0, S1, S2, S3, HALT};
+Estados_enum estado = S0;
 
-bool CALCULATE_CORTES(int * cortes, int cortes_size){
-  int perda = 5;
-  cortes[1] = cortes[0] - (cortes[2]*cortes[3] + perda*cortes[3]);
-  if(cortes[1] >= 0){
-    return true;
-  }
-  return false;
-}
-*/
-float tamanho_madeira = 300;
-float largura_mesa = 350;
-float perda_corte = 0.3;
-//float tamanho_corte[5];
-//float numero_cortes[5];
-float tamanho_corte[] = {30,20,0,0,0};
-float numero_cortes[] = {5,5,0,0,0};
-float sobra = 0;
-float posicao_carrinho = 350;
+uint16_t IHM_STA_Pagina = 0;
 
-void calcula_posicao_carrinho(float deslocamento){
-  posicao_carrinho = posicao_carrinho - deslocamento;
-  Serial.println(deslocamento);
-  Serial.println(posicao_carrinho);
-}
-float calcula_sobra(){
-  float total_corte = 0;
-  for(int i=0;i<5;i++){
-    total_corte = total_corte+(tamanho_corte[i]*numero_cortes[i])+(numero_cortes[i]*perda_corte);
-  }
-  sobra = tamanho_madeira - total_corte;
-  return sobra;
-}
-int calcula_tipos_cortes(){
-  int tipos = 0;
-  for(int i=0;i<5;i++){
-    Serial.println(tamanho_corte[i]);
-    if(tamanho_corte[i] != 0 && numero_cortes[i] != 0){
-      tipos++;
-    }
-  }
-  return tipos;
-}
-void zera_cortes(){
-  for(int i=0;i<5;i++){
-    tamanho_corte[i] = 0;
-    numero_cortes[i] = 0;
-  }
-}
+int16_t comando[17]= {0};
+int16_t comando_manual[6] = {0};
+int16_t saidas[8] = {0};
+int16_t entradas[8] = {0};
 
-void motor_passo(int distancia){
-  digitalWrite(M1_AVANCO, HIGH);
-  digitalWrite(LED_BUILTIN, HIGH);
-  for(int i=0;i<distancia;i++){
-    digitalWrite(M1_PASSO, HIGH);   
-    delay(1);
-    digitalWrite(M1_PASSO, LOW);
-    delay(1);
-  }
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(LED_BUILTIN, LOW);
-  for(int i=0;i<distancia;i++){
-    digitalWrite(M1_PASSO, HIGH);   
-    delay(1);
-    digitalWrite(M1_PASSO, LOW);
-    delay(1);
-  }
-}
+bool play_button = false;
 
-int ESTADO_INICIAL(){ 
-  bool recebe_cortes = true;
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);  
-  //GET_CORTES(cortes, cortes_size);
-  while(recebe_cortes == false){}   
-  return NULL;
-}
+float plano_corte[35]={0};
+int16_t indice_plano_corte = 0;
 
-int EMPURRA_MADEIRA(float distancia){ 
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);
-  
-  //motor_passo(distancia);
-  calcula_posicao_carrinho(distancia);
-  
-  return NULL;
-}
+unsigned long timestamp_ultimo_acionamento = 0;
 
-int CORTE_AVANCO(){ 
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);     
-  return NULL;
-}
-
-int CORTE_RETORNO(){ 
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);     
-  return NULL;
-}
-
-int RETORNO(){ 
-  digitalWrite(M1_AVANCO, LOW);
-  digitalWrite(M1_RETORNO, LOW);
-  digitalWrite(M1_PASSO, LOW);
-  digitalWrite(M2_SERRA, LOW);
-  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
-  digitalWrite(P2_CARRINHO_SERRA, LOW);
-  digitalWrite(P3_PRENSOR_SAIDA, LOW);
-  digitalWrite(P4_PUXADOR, LOW);     
-  return NULL;
-}
-
-// the setup function runs once when you press reset or power the board
 void setup() {
+  Serial.begin(115200); // (USB)
+  Serial2.begin(115200); //(485)
+  pinMode(2, OUTPUT);
+
+  stepper.setEnablePin(M1_ENABLE);
+  stepper.setPinsInverted(false, false, true); // direction, steps, enable
+  stepper.setMaxSpeed(VELOCIDADE_MAX_CARRINHO); // steps per second 2cm/s
+  stepper.setAcceleration(ACELERACAO_MAX_CARRINHO);// steps per second per second
+  stepper.disableOutputs(); // avoid to heat
+    
   pinMode(LED_BUILTIN,           OUTPUT);
-  pinMode(M1_AVANCO,             OUTPUT);
-  pinMode(M1_RETORNO,            OUTPUT);
-  pinMode(M1_PASSO,              OUTPUT);
+  pinMode(M1_STEP,               OUTPUT);
+  pinMode(M1_DIRECTION,          OUTPUT);
+  pinMode(M1_ENABLE,             OUTPUT);
   pinMode(M2_SERRA,              OUTPUT);
   pinMode(P1_PRENSOR_ENTRADA,    OUTPUT);
   pinMode(P2_CARRINHO_SERRA,     OUTPUT);
   pinMode(P3_PRENSOR_SAIDA,      OUTPUT);
   pinMode(P4_PUXADOR,            OUTPUT);
 
-  pinMode(A1_RETORNO_ALIMENTACAO, INPUT);
+  pinMode(A1_RETORNO_CARRINHO,    INPUT);
   pinMode(A2_AVANCO_SERRA,        INPUT);
   pinMode(A3_RETORNO_SERRA,       INPUT);
   pinMode(A4_PUXADOR,             INPUT);
   pinMode(A5_BOTAO_CANCELA,       INPUT);
+  pinMode(A6_RESERVA,             INPUT);
+  pinMode(A7_RESERVA,             INPUT);
+  pinMode(A8_RESERVA,             INPUT);
 
-  Serial.begin(115200);
-  Serial.println("Initialized");
 }
 
-// the loop function runs over and over again forever
 void loop() {
-  int tipos_cortes = calcula_tipos_cortes();
-  Serial.println("NUM CORTES ");
-    Serial.println(tipos_cortes);
-  zera_cortes();
-  
-  ESTADO_INICIAL();
-  Serial.println("ESTADO_INICIAL");
-  EMPURRA_MADEIRA(largura_mesa-tamanho_madeira);
-  Serial.println("EMPURRA_MADEIRA");
-  for(int tipo=0; tipo<tipos_cortes;tipo++){
-    Serial.println(tamanho_corte[tipo]);
-    for(int numero;numero<numero_cortes[tipo];numero++){
-      Serial.println("EMPURRA_MADEIRA");
-      Serial.println(tamanho_corte[tipo]);
-      EMPURRA_MADEIRA(tamanho_corte[tipo]);
-      if(true){
-        CORTE_AVANCO();
-        if(true){
+  Comm3.page(&IHM_STA_Pagina);
+  select_screen(IHM_STA_Pagina);
+}
+
+void select_screen(uint16_t IHM_STA_Pagina){
+  switch(IHM_STA_Pagina){
+    case 0:
+      Serial.println("Tela Inicial");
+      break;
+      
+     case 1:
+      Serial.println("Operador Automático");
+      // TODO add check pause here
+      maquina_estados();
+      MANUAL_zera_comando();
+      break;
+      
+     case 5:
+      Serial.println("Operador Manual");
+      
+      MANUAL_read_comando();
+      MANUAL_empurra_retorno();
+      MANUAL_empurra_avanco();     
+      MANUAL_corte();
+      MANUAL_reset();  
+      MANUAL_zera_botoes();
+       
+      TESTE_zera_saidas(); 
+      break;
+      
+     case 7:
+      Serial.println("Modo Testes");
+      
+      TESTE_read_saidas();
+      TESTE_write_saidas();
+      TESTE_read_entradas();
+      break;
+  }
+}
+
+//------------------------------------------
+// OPERADOR AUTOMATICO
+
+void maquina_estados(){
+  switch(estado){
+    case S0:
+      ESTADO_INICIAL();
+      //AUTOMATICO_retorna_carrinho(); // TODO Checar necessidade  
+      AUTOMATICO_read_comando();
+      UTILS_calculate_sobra();
+      play_button = AUTOMATICO_check_buttons();
+      if(play_button){
+        AUTOMATICO_print_comando();
+        Serial.print("PLAY");
+        Comm3.write(15, 0);
+        estado = S1;
+      }
+      break;
+
+     case S1:
+      if(true){//(posicao_atual - plano_corte[indice_plano_corte] > 0)){estado != HALT && (sobra > plano_corte[indice_plano_corte]) && 
+        Serial.println(plano_corte[indice_plano_corte]);
+        EMPURRA_MADEIRA(plano_corte[indice_plano_corte]);
+        //calcula_posicao_atual(plano_corte[indice_plano_corte]); //TESTE
+        estado = S2;
+      }
+      else{
+        //Serial.print(posicao_atual - plano_corte[indice_plano_corte]);
+        Serial.println("Não é possível realizar mais cortes");
+        estado = S0;
+      }
+      break;
+
+     case S2:
+      if(!digitalRead(A2_AVANCO_SERRA)){
+        AUTOMATICO_corte();
+        indice_plano_corte++;
+        if(plano_corte[indice_plano_corte] != 0){
           CORTE_RETORNO();
+          delay(5000);
+          ESTADO_INICIAL();
+          estado = S1;//  NOVO CORTE
+        }
+        else{
+         estado = S3;// RETORNA
         }
       }
-      delay(500);
-    }
-    
-    RETORNO();
+      break;
+      
+     case S3:
+      RETORNO();
+      AUTOMATICO_retorna_carrinho();
+      Comm3.read(17, &comando[17]);
+      while(!comando[17]){// Espera o Reset
+        Comm3.read(17, &comando[17]);
+      }
+      estado = S0;
+      break;
+     
+     case HALT:
+      break;
   }
-  digitalWrite(LED_BUILTIN, HIGH);   // turn the LED on (HIGH is the voltage level)
-  delay(1000);                       // wait for a second
-  digitalWrite(LED_BUILTIN, LOW);    // turn the LED off by making the voltage LOW
-  delay(1000);                       // wait for a second
+}
+
+void AUTOMATICO_read_comando(){
+  for(int i=1;i<18;i++){
+      Comm3.read(i, &comando[i]);
+  }
+}
+
+void AUTOMATICO_print_comando(){
+  for(int i=1;i<18;i++){
+    Serial.print("posicao ");
+    Serial.print(i);
+    Serial.print(":  ");
+    Serial.println(comando[i]);
+  }
+  Serial.println("");
+
+  Serial.println("");
+}
+
+void AUTOMATICO_cria_plano_corte(){
+  //tamanho_perfil = comando[1];
+  //espessura_serra = comando[2];
+  int index_plano_corte = 1;
+  //sobra = tamanho_perfil;
+  plano_corte[0] =  TAMANHO_MESA-comando[1];
+  for(int tipo_corte=7 ; tipo_corte<=10; tipo_corte++){//TODO inverter tipo de corte com tamanho corte
+    for(int num_corte=0; num_corte<comando[tipo_corte-4]; num_corte++,index_plano_corte++){
+      plano_corte[index_plano_corte] = comando[tipo_corte];
+      }
+   }
+  indice_plano_corte = 0; 
+} 
+
+void AUTOMATICO_print_plano_corte(){
+  Serial.print(plano_corte[0]);
+  for(int i=1;plano_corte[i] !=0;i++){
+    if(i>0 && plano_corte[i-1] == plano_corte[i]){
+      Serial.print(" - ");
+      Serial.print(plano_corte[i]);
+    }else{
+      Serial.println("");
+      Serial.print(plano_corte[i]);
+    }
+  }
+}
+
+bool AUTOMATICO_check_buttons(){
+  if(comando[17] == 1){ // RESET
+    AUTOMATICO_zera_comando();
+    return false;
+  }
+  if(comando[16] == 1){ // PAUSE
+    Comm3.write(16, 0);
+    AUTOMATICO_zera_comando();
+    return false;
+  }
+  if(comando[15] == 1){ //PLAY
+    Comm3.write(15, 0);
+    AUTOMATICO_read_comando();
+    AUTOMATICO_print_comando();
+    AUTOMATICO_cria_plano_corte();
+    AUTOMATICO_print_plano_corte();
+    return true;
+  }
+}
+
+void AUTOMATICO_zera_comando(){
+  for(int i=1;i<18;i++){
+      Comm3.write(i, 0);
+  }
+}
+
+void AUTOMATICO_corte(){
+  if(!digitalRead(A2_AVANCO_SERRA)){
+    while(digitalRead(A3_RETORNO_SERRA)){
+      CORTE_AVANCO();
+    }
+  }
+}
+
+void AUTOMATICO_moveDistance(float distance, float serra, bool frente) {
+  int count1 = 0;
+  stepper.enableOutputs();
+  distance = UTILS_calculate_distance(distance, serra);// TODO PRECISA DISSO NA VOLTA?
+  stepper.move(distance * STEPS_PER_ROTATION);
+  while(stepper.distanceToGo() != 0){
+    count1++;
+    if(count1%800 == 0 && 
+      (((digitalRead(A1_RETORNO_CARRINHO) == 0) && (frente == false)) || 
+      ((digitalRead(A4_PUXADOR) == 0) && (frente == true))) ){
+      stepper.setCurrentPosition(0);
+      break;
+    }
+    stepper.run();
+  }
+  stepper.disableOutputs();
+}
+
+void AUTOMATICO_retorna_carrinho(){
+  Serial.print("Voltando");
+  stepper.enableOutputs();
+  stepper.move(-240000);// TODO CALCULAR DISTANCIA
+  while(digitalRead(A1_RETORNO_CARRINHO) == 1){
+    //digitalRead(A1_RETORNO_CARRINHO);
+    stepper.run();
+  }
+  stepper.setCurrentPosition(0);
+  stepper.disableOutputs();
+  Serial.print("Retornei para o início");
+}
+
+//------------------------------------------
+// OPERADOR MANUAL
+
+void MANUAL_read_comando(){
+  for(uint16_t i=18;i<24;i++){
+      Comm3.read(i, &comando_manual[i-18]);
+      Serial.print(comando_manual[i-18]);
+  } 
+  Serial.println("");
+}
+
+void MANUAL_zera_botoes(){
+  for(uint16_t i=20;i<24;i++){
+      Comm3.write(i, 0);
+  } 
+}
+
+void MANUAL_zera_comando(){
+  for(uint16_t i=18;i<24;i++){
+      Comm3.write(i, 0);
+  } 
+}
+
+void MANUAL_empurra_retorno(){
+  if(comando_manual[2] == 1){
+    AUTOMATICO_moveDistance(-comando_manual[0], comando_manual[1], false);
+  }
+}
+
+void MANUAL_empurra_avanco(){
+  if(comando_manual[3] == 1){
+    AUTOMATICO_moveDistance(comando_manual[0], comando_manual[1], true);
+  }
+}
+
+void MANUAL_corte(){
+  if(comando_manual[4] == 1){ 
+      if(!digitalRead(A2_AVANCO_SERRA)){
+        while(digitalRead(A3_RETORNO_SERRA)){
+          CORTE_AVANCO();
+        }
+        CORTE_RETORNO();
+        delay(5000);
+        ESTADO_INICIAL();
+        Comm3.write(22, 0);
+     }
+  }
+}
+
+void MANUAL_reset(){// Volta para o início
+  if(comando_manual[5] == 1){
+    AUTOMATICO_retorna_carrinho();
+  }
+}
+
+//------------------------------------------
+// MODO DE TESTES
+
+void TESTE_zera_saidas(){
+  for(int i=24;i<32;i++){
+    Comm3.write(i, 0);
+  }
+}
+
+void TESTE_read_saidas(){
+  for(uint16_t i=24;i<32;i++){
+      Comm3.read(i, &saidas[i-24]);
+  }
+}
+
+void TESTE_write_saidas(){
+  if(saidas[2]==1)        stepper.enableOutputs();
+  else if(saidas[2]==0)  stepper.disableOutputs();
+  if(saidas[0]==1)      TESTE_moveDistancia(4000);
+  digitalWrite(M2_SERRA,           saidas[3]);
+  digitalWrite(P1_PRENSOR_ENTRADA, saidas[4]);
+  digitalWrite(P2_CARRINHO_SERRA,  saidas[5]);
+  digitalWrite(P3_PRENSOR_SAIDA,   saidas[6]);
+  digitalWrite(P4_PUXADOR,         saidas[7]);
+}
+
+void TESTE_read_entradas(){
+  entradas[0] = digitalRead(A1_RETORNO_CARRINHO);
+  entradas[1] =     digitalRead(A2_AVANCO_SERRA);
+  entradas[2] =    digitalRead(A3_RETORNO_SERRA);
+  entradas[3] =          digitalRead(A4_PUXADOR);
+  entradas[4] =    digitalRead(A5_BOTAO_CANCELA);
+  entradas[5] =          digitalRead(A6_RESERVA);
+  entradas[6] =          digitalRead(A7_RESERVA);
+  entradas[7] =          digitalRead(A8_RESERVA);
+  
+  for(int i=32;i<40;i++){
+    Comm3.write(i, entradas[i-32]);
+  }
+}
+
+void TESTE_moveDistancia(float distancia) {
+  int count1=0;
+  //stepper.enableOutputs();
+  stepper.move(saidas[1]?distancia:-distancia); //moveTo for absolute position
+  while (stepper.distanceToGo() != 0)// && saidas[0] && saidas[2] && !A1_RETORNO_CARRINHO && !A4_PUXADOR) 
+  { 
+    /*
+    count1++;
+    if(count1%1000==0){
+      Comm3.read(24, &saidas[0]);
+      Comm3.read(25, &saidas[1]);
+      Comm3.read(26, &saidas[2]);
+    }
+    */
+    stepper.run();
+  }
+  stepper.disableOutputs();
+}
+
+//------------------------------------------
+// UTILS
+
+float UTILS_calculate_distance(float distance, float serra){// TODO Conferir com tio Celo
+  return distance>0?distance+(serra/10):distance-(serra/10);
+}
+
+void UTILS_calculate_sobra(){// TODO adicionar o calculo de distãncia~?
+  float sobra = comando[1];
+  for(int i=3;i<7;i++){
+    sobra = sobra - (comando[i] * UTILS_calculate_distance(comando[i+4], comando[2]));
+    Comm3.write(i+8, sobra);
+  }
+}
+
+//------------------------------------------
+// MAQUINA DE ESTADOS
+
+void ESTADO_INICIAL(){ 
+  Serial.println("ESTADO_INICIAL");
+        
+  stepper.disableOutputs();
+  digitalWrite(M2_SERRA, LOW);
+  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
+  digitalWrite(P2_CARRINHO_SERRA, LOW);
+  digitalWrite(P3_PRENSOR_SAIDA, LOW);
+  digitalWrite(P4_PUXADOR, LOW);
+}
+
+void EMPURRA_MADEIRA(float distancia){// TODO adicionar e calibrar avanço do motor de passo em cm
+  Serial.print("EMPURRA_MADEIRA ");
+  Serial.println(distancia);
+      
+  digitalWrite(M1_STEP, LOW);
+  digitalWrite(M1_DIRECTION, HIGH);
+  digitalWrite(M2_SERRA, HIGH);
+  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
+  digitalWrite(P2_CARRINHO_SERRA, LOW);
+  digitalWrite(P3_PRENSOR_SAIDA, LOW);
+  digitalWrite(P4_PUXADOR, LOW);
+  if(distancia != 0){
+      AUTOMATICO_moveDistance(distancia, comando[2], true);
+  }
+}
+
+void CORTE_AVANCO(){ 
+  Serial.println("CORTE_AVANCO ");
+        
+  digitalWrite(M1_STEP, LOW);
+  digitalWrite(M1_DIRECTION, LOW);
+  digitalWrite(M2_SERRA, HIGH);
+  digitalWrite(P1_PRENSOR_ENTRADA, HIGH);
+  digitalWrite(P2_CARRINHO_SERRA, HIGH);
+  digitalWrite(P3_PRENSOR_SAIDA, HIGH);
+  digitalWrite(P4_PUXADOR, LOW);     
+}
+
+void CORTE_RETORNO(){
+  Serial.println("CORTE_RETORNO ");
+        
+  stepper.disableOutputs();
+  digitalWrite(M2_SERRA, HIGH);
+  digitalWrite(P1_PRENSOR_ENTRADA, HIGH);
+  digitalWrite(P2_CARRINHO_SERRA, LOW);
+  digitalWrite(P3_PRENSOR_SAIDA, LOW);
+  digitalWrite(P4_PUXADOR, HIGH);     
+}
+
+void RETORNO(){// TODO adicionar motor de passo
+  Serial.println("RETORNO ");
+  
+  digitalWrite(M1_DIRECTION, LOW);  
+  digitalWrite(M1_STEP, LOW);
+  digitalWrite(M2_SERRA, LOW);
+  digitalWrite(P1_PRENSOR_ENTRADA, LOW);
+  digitalWrite(P2_CARRINHO_SERRA, HIGH);
+  digitalWrite(P3_PRENSOR_SAIDA, LOW);
+  digitalWrite(P4_PUXADOR, HIGH);  
+}
+
+void HALT_STOP(){// TODO adicionar motor de passo
+  Serial.println("HALT ");
+}
+
+//------------------------------------------
+// Função ISR (chamada quando há interrupção)
+
+void IRAM_ATTR funcao_ISR()
+{
+  /* Conta acionamentos do botão considerando debounce */
+  if ( (millis() - timestamp_ultimo_acionamento) >= TEMPO_DEBOUNCE ){
+    Serial.print("PERDI MEU BRAÇO");
+    digitalWrite(M1_STEP, LOW);
+    digitalWrite(M1_DIRECTION, LOW);
+    digitalWrite(M2_SERRA, LOW);
+    digitalWrite(P1_PRENSOR_ENTRADA, LOW);
+    digitalWrite(P2_CARRINHO_SERRA, LOW);
+    digitalWrite(P3_PRENSOR_SAIDA, LOW);
+    digitalWrite(P4_PUXADOR, LOW); 
+    stepper.disableOutputs();
+       
+    estado = HALT;
+    //contador_acionamentos++;
+    timestamp_ultimo_acionamento = millis();
+  }
 }
